@@ -2,6 +2,13 @@ name: Build Nikki
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - 'nikki/**'
+      - 'luci-app-nikki/**'
+      - '.github/workflows/build-nikki.yml'
 
 jobs:
   build:
