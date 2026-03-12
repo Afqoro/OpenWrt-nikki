@@ -54,15 +54,21 @@ jobs:
           UPLOAD_URL: ${{ secrets.UPLOAD_URL }}
           UPLOAD_API_KEY: ${{ secrets.UPLOAD_API_KEY }}
         run: |
-          curl --fail --show-error --silent \
+          RESPONSE=$(curl --fail --show-error --silent \
             -X POST "$UPLOAD_URL" \
             -H "Authorization: Bearer $UPLOAD_API_KEY" \
             -F "file=@nikki-${{ matrix.arch }}.tar.gz" \
-            -F "arch=${{ matrix.arch }}" \
-            -F "target=nikki" \
+            -F "category=firmware" \
+            -F "subfolder=${{ matrix.arch }}" \
             -F "repository=${{ github.repository }}" \
-            -F "run_id=${{ github.run_id }}-${{ matrix.arch }}" \
-            -F "sha256=${SHA256}"
+            -F "run_id=${{ github.run_id }}" \
+            -F "sha256=${SHA256}")
 
+          python3 - <<'PY' "$RESPONSE"
+      import json, sys
+      data = json.loads(sys.argv[1])
+      print(f"{data.get('success')} - {data.get('message')}")
+      PY
+      
       - name: Done
         run: echo "Build uploaded successfully"
