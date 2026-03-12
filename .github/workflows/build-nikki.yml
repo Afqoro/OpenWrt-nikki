@@ -18,7 +18,7 @@ jobs:
       matrix:
         arch:
           - aarch64_generic-openwrt-24.10
-          - aarch64_cortex-a72-openwrt-24.10
+          # - x86_64-openwrt-24.10
 
     steps:
       - name: Checkout repo
@@ -41,9 +41,28 @@ jobs:
       - name: Create tar.gz like upstream
         run: |
           tar -czf nikki-${{ matrix.arch }}.tar.gz -C artifacts/${{ matrix.arch }} .
+          ls -lh nikki-${{ matrix.arch }}.tar.gz
 
-      - name: Upload tar.gz artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: nikki-${{ matrix.arch }}
-          path: nikki-${{ matrix.arch }}.tar.gz
+      - name: Generate SHA256
+        run: |
+          sha256sum nikki-${{ matrix.arch }}.tar.gz | awk '{print $1}' > sha256.txt
+          echo "SHA256=$(cat sha256.txt)" >> $GITHUB_ENV
+          cat sha256.txt
+
+      - name: Upload build to FastAPI endpoint
+        env:
+          UPLOAD_URL: ${{ secrets.UPLOAD_URL }}
+          UPLOAD_API_KEY: ${{ secrets.UPLOAD_API_KEY }}
+        run: |
+          curl --fail --show-error --silent \
+            -X POST "$UPLOAD_URL" \
+            -H "Authorization: Bearer $UPLOAD_API_KEY" \
+            -F "file=@nikki-${{ matrix.arch }}.tar.gz" \
+            -F "arch=${{ matrix.arch }}" \
+            -F "target=nikki" \
+            -F "repository=${{ github.repository }}" \
+            -F "run_id=${{ github.run_id }}-${{ matrix.arch }}" \
+            -F "sha256=${SHA256}"
+
+      - name: Done
+        run: echo "Build uploaded successfully"
