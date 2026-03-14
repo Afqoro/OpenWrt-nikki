@@ -62,7 +62,7 @@ define Package/nikki/install
 	$(INSTALL_DIR) $(1)/lib/upgrade/keep.d
 
 	$(INSTALL_CONF) ./files/mixin.yaml $(1)/etc/nikki/mixin.yaml
-	$(INSTALL_CONF) ./files/profiles/mahavpn.yaml $(1)/etc/nikki/profiles/mahavpn.yaml
+	$(INSTALL_CONF) ./files/profiles/mahavpn-simple.yaml $(1)/etc/nikki/profiles/mahavpn-simple.yaml
 	$(INSTALL_CONF) ./files/nikki.conf $(1)/etc/config/nikki
 	$(INSTALL_BIN) ./files/nikki.init $(1)/etc/init.d/nikki
 	$(INSTALL_BIN) ./files/nikki.upgrade $(1)/lib/upgrade/keep.d/nikki
@@ -84,7 +84,7 @@ endef
 define Package/nikki/conffiles
 /etc/config/nikki
 /etc/nikki/mixin.yaml
-/etc/nikki/profiles/mahavpn.yaml
+/etc/nikki/profiles/mahavpn-simple.yaml
 endef
 
 define Package/nikki/postrm

@@ -1,0 +1,37 @@
+proxies:
+# > Config by Goodboy X MahaVPN
+# > Join Grup tele for More Update: https://t.me/MahaVPN_Group
+# > All Format Akun Clash Silahkan Akses Link Berikut: https://github.com/GboyGud/FORMAT_AKUN_CLASH
+# > Mulai Baris Ini Kebawah Isi Dengan Akun Anda Sendiri
+# > Isi Menggunakan Akun VPN dengan Metode Bug Paket Anda, bebas trojan/vmess/vless
+
+- name: TrojanWS
+  server: BUG.COM
+  port: 443
+  type: trojan
+  password: UUID/PASSWORD
+  skip-cert-verify: true
+  sni: HOST.COM
+  network: ws
+  ws-opts:
+    path: /trojan
+    headers:
+      Host: HOST.COM
+  udp: true
+
+- name: VmessWS
+  server: BUG.COM
+  port: 80
+  type: vmess
+  uuid: UUID/PASSWORD
+  alterId: 0
+  cipher: auto
+  tls: false
+  skip-cert-verify: true
+  servername: HOST.COM
+  network: ws
+  ws-opts:
+    path: /mahavpn
+    headers:
+      Host: HOST.COM
+  udp: true

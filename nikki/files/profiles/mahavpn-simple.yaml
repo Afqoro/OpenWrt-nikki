@@ -1,0 +1,58 @@
+---
+proxy-providers:
+  Server Akun VPN:
+    type: file
+    path: "./providers/proxy/vpn.yaml"
+    health-check:
+      enable: true
+      url: http://www.gstatic.com/generate_204
+      interval: 20
+proxy-groups:
+- name: "⭐ G - UMUM"
+  type: select
+  proxies:
+  - "🍉 Failover"
+  - "🥑 Latency"
+  - "🍍 Balance"
+  - "🥝 Manual"
+  - DIRECT
+  disable-udp: false
+- name: "🍉 Failover"
+  type: fallback
+  use:
+  - Server Akun VPN
+  disable-udp: false
+  url: http://cp.cloudflare.com/generate_204
+  interval: '30'
+- name: "🥑 Latency"
+  type: url-test
+  use:
+  - Server Akun VPN
+  disable-udp: false
+  url: http://cp.cloudflare.com/generate_204
+  interval: '30'
+  tolerance: '50'
+- name: "🍍 Balance"
+  type: load-balance
+  use:
+  - Server Akun VPN
+  strategy: consistent-hashing
+  disable-udp: false
+  url: http://cp.cloudflare.com/generate_204
+  interval: '30'
+- name: "🥝 Manual"
+  type: select
+  use:
+  - Server Akun VPN
+  disable-udp: false
+rules:
+- DST-PORT,7895,REJECT
+- DST-PORT,7892,REJECT
+- "RULE-SET,Rule_Whatsapp,🥑 Latency"
+- DST-PORT,443/80/8080,⭐ G - UMUM
+- MATCH,⭐ G - UMUM
+rule-providers:
+  Rule_Whatsapp:
+    type: file
+    behavior: classical
+    path: "./providers/rule/whatsapp.yaml"
