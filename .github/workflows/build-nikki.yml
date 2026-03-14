@@ -24,6 +24,20 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v5
 
+      - name: Read package version
+        run: |
+          PKG_VERSION=$(sed -n 's/^PKG_VERSION:=//p' luci-app-nikki/Makefile | head -n1 | tr -d '[:space:]')
+          if [ -z "$PKG_VERSION" ]; then
+            echo "PKG_VERSION not found in luci-app-nikki/Makefile"
+            exit 1
+          fi
+
+          echo "PKG_VERSION=$PKG_VERSION" >> "$GITHUB_ENV"
+          echo "ARCHIVE_NAME=nikki-${{ matrix.arch }}-$PKG_VERSION.tar.gz" >> "$GITHUB_ENV"
+
+          echo "Using PKG_VERSION=$PKG_VERSION"
+          echo "Using ARCHIVE_NAME=nikki-${{ matrix.arch }}-$PKG_VERSION.tar.gz"
+
       - name: Build packages
         uses: openwrt/gh-action-sdk@main
         env:
@@ -34,19 +48,19 @@ jobs:
 
       - name: Collect IPK files
         run: |
-          mkdir -p artifacts/${{ matrix.arch }}
-          find bin -name '*nikki*.ipk' -exec cp -v {} artifacts/${{ matrix.arch }}/ \;
-          ls -lh artifacts/${{ matrix.arch }}/
+          mkdir -p "artifacts/${{ matrix.arch }}"
+          find bin -name '*nikki*.ipk' -exec cp -v {} "artifacts/${{ matrix.arch }}/" \;
+          ls -lh "artifacts/${{ matrix.arch }}/"
 
       - name: Create tar.gz like upstream
         run: |
-          tar -czf nikki-${{ matrix.arch }}.tar.gz -C artifacts/${{ matrix.arch }} .
-          ls -lh nikki-${{ matrix.arch }}.tar.gz
+          tar -czf "$ARCHIVE_NAME" -C "artifacts/${{ matrix.arch }}" .
+          ls -lh "$ARCHIVE_NAME"
 
       - name: Generate SHA256
         run: |
-          sha256sum nikki-${{ matrix.arch }}.tar.gz | awk '{print $1}' > sha256.txt
-          echo "SHA256=$(cat sha256.txt)" >> $GITHUB_ENV
+          sha256sum "$ARCHIVE_NAME" | awk '{print $1}' > sha256.txt
+          echo "SHA256=$(cat sha256.txt)" >> "$GITHUB_ENV"
           cat sha256.txt
 
       - name: Upload file to API endpoint
@@ -54,20 +68,29 @@ jobs:
           UPLOAD_URL: ${{ secrets.UPLOAD_URL }}
           UPLOAD_API_KEY: ${{ secrets.UPLOAD_API_KEY }}
         run: |
-          RESPONSE=$(curl --fail --show-error --silent \
-            -X POST "$UPLOAD_URL" \
-            -H "Authorization: Bearer $UPLOAD_API_KEY" \
-            -F "file=@nikki-${{ matrix.arch }}.tar.gz" \
-            -F "category=firmware" \
-            -F "subfolder=${{ matrix.arch }}" \
-            -F "repository=${{ github.repository }}" \
-            -F "run_id=${{ github.run_id }}" \
-            -F "sha256=${SHA256}")
+          RESPONSE="$(
+            curl --fail --show-error --silent \
+              -X POST "$UPLOAD_URL" \
+              -H "Authorization: Bearer $UPLOAD_API_KEY" \
+              -F "file=@$ARCHIVE_NAME" \
+              -F "category=ipk_mod" \
+              -F "subfolder=${{ matrix.arch }}" \
+              -F "repository=${{ github.repository }}" \
+              -F "sha256=${SHA256}" \
+              -F "notify_telegram=1" \
+              -F "pkg_name=nikki" \
+              -F "pkg_version=${PKG_VERSION}" \
+              -F "arch=${{ matrix.arch }}" \
+              -F "mod_name=MahaVPN" \
+              -F "caption_title=Nikki build automation"
+          )"
 
           python3 - <<'PY' "$RESPONSE"
           import json, sys
           data = json.loads(sys.argv[1])
           print(f"{data.get('success')} - {data.get('message')}")
+          if data.get("data"):
+              print(json.dumps(data["data"], indent=2))
           PY
 
       - name: Done
