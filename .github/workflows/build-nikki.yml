@@ -16,12 +16,23 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        arch:
-          - aarch64_generic-openwrt-24.10
-          # - x86_64-openwrt-24.10
+        include:
+          - arch: aarch64_generic
+            sdk_target: armsr-armv8
+            sdk_url: https://downloads.openwrt.org/releases/24.10.5/targets/armsr/armv8/openwrt-sdk-24.10.5-armsr-armv8_gcc-13.3.0_musl.Linux-x86_64.tar.zst
+            sdk_archive: openwrt-sdk-24.10.5-armsr-armv8_gcc-13.3.0_musl.Linux-x86_64.tar.zst
+
+          - arch: aarch64_cortex-a72
+            sdk_target: bcm27xx-bcm2711
+            sdk_url: https://downloads.openwrt.org/releases/24.10.5/targets/bcm27xx/bcm2711/openwrt-sdk-24.10.5-bcm27xx-bcm2711_gcc-13.3.0_musl.Linux-x86_64.tar.zst
+            sdk_archive: openwrt-sdk-24.10.5-bcm27xx-bcm2711_gcc-13.3.0_musl.Linux-x86_64.tar.zst
+
+    env:
+      PACKAGE_NAME: nikki
+      LUCI_PACKAGE_NAME: luci-app-nikki
 
     steps:
-      - name: Checkout repo
+      - name: Checkout source
         uses: actions/checkout@v5
 
       - name: Read package version
@@ -38,18 +49,73 @@ jobs:
           echo "Using PKG_VERSION=$PKG_VERSION"
           echo "Using ARCHIVE_NAME=nikki-${{ matrix.arch }}-$PKG_VERSION.tar.gz"
 
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential clang flex bison g++ gawk gcc-multilib g++-multilib \
+            gettext git libncurses5-dev libssl-dev rsync unzip zlib1g-dev \
+            file wget subversion swig time tar zstd python3 python3-pip python3-setuptools curl
+
+      - name: Cache SDK archive
+        uses: actions/cache@v4
+        with:
+          path: ${{ matrix.sdk_archive }}
+          key: sdk-${{ matrix.sdk_target }}-${{ matrix.sdk_archive }}
+
+      - name: Download OpenWrt SDK
+        run: |
+          if [ ! -f "${{ matrix.sdk_archive }}" ]; then
+            wget -O "${{ matrix.sdk_archive }}" "${{ matrix.sdk_url }}"
+          fi
+          ls -lh "${{ matrix.sdk_archive }}"
+
+      - name: Extract OpenWrt SDK
+        run: |
+          rm -rf openwrt-sdk-*
+          tar --use-compress-program=unzstd -xf "${{ matrix.sdk_archive }}"
+          SDK_DIR=$(find . -maxdepth 1 -type d -name "openwrt-sdk-*" | head -n 1)
+
+          if [ -z "$SDK_DIR" ]; then
+            echo "SDK_DIR not found after extraction"
+            exit 1
+          fi
+
+          echo "SDK_DIR=$SDK_DIR" >> "$GITHUB_ENV"
+          echo "Using SDK_DIR=$SDK_DIR"
+
+      - name: Prepare custom feed packages
+        run: |
+          mkdir -p "$SDK_DIR/package/custom"
+          rm -rf "$SDK_DIR/package/custom/nikki"
+          rm -rf "$SDK_DIR/package/custom/luci-app-nikki"
+
+          cp -r "$GITHUB_WORKSPACE/nikki" "$SDK_DIR/package/custom/nikki"
+          cp -r "$GITHUB_WORKSPACE/luci-app-nikki" "$SDK_DIR/package/custom/luci-app-nikki"
+
+      - name: Update feeds
+        working-directory: ${{ env.SDK_DIR }}
+        run: |
+          ./scripts/feeds update -a
+          ./scripts/feeds install luci
+
+      - name: Generate config
+        working-directory: ${{ env.SDK_DIR }}
+        run: |
+          echo "CONFIG_PACKAGE_nikki=m" >> .config
+          echo "CONFIG_PACKAGE_luci-app-nikki=m" >> .config
+          make defconfig
+
       - name: Build packages
-        uses: openwrt/gh-action-sdk@main
-        env:
-          ARCH: ${{ matrix.arch }}
-          FEEDNAME: nikki
-          PACKAGES: nikki luci-app-nikki
-          NO_REFRESH_CHECK: true
+        working-directory: ${{ env.SDK_DIR }}
+        run: |
+          make package/custom/nikki/compile V=s -j"$(nproc)"
+          make package/custom/luci-app-nikki/compile V=s -j"$(nproc)"
 
       - name: Collect IPK files
         run: |
           mkdir -p "artifacts/${{ matrix.arch }}"
-          find bin -name '*nikki*.ipk' -exec cp -v {} "artifacts/${{ matrix.arch }}/" \;
+          find "$SDK_DIR/bin/packages" -type f \( -name 'nikki_*.ipk' -o -name 'luci-app-nikki_*.ipk' \) -exec cp -v {} "artifacts/${{ matrix.arch }}/" \;
           ls -lh "artifacts/${{ matrix.arch }}/"
 
       - name: Create tar.gz like upstream
@@ -90,7 +156,8 @@ jobs:
           data = json.loads(sys.argv[1])
           print(f"{data.get('success')} - {data.get('message')}")
           if data.get("data"):
-              print(json.dumps(data["data"], indent=2))
+              import json as _json
+              print(_json.dumps(data["data"], indent=2))
           PY
 
       - name: Done
