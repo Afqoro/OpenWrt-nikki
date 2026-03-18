@@ -94,20 +94,39 @@ return view.extend({
 
         s = m.section(form.NamedSection, 'config', 'config', _('✨ App Config'));
 
-								o = s.option(form.DummyValue, '_enabled_toggle', _('Enable'));
-								o.rawhtml = true;
-								o.cfgvalue = function(section_id) {
-												const enabled = uci.get('nikki', section_id, 'enabled') == '1';
+								o = s.option(form.Flag, 'enabled', _('Enable'));
+								o.rmempty = false;
+								o.renderWidget = function(section_id, option_index, cfgvalue) {
+								    const node = form.Flag.prototype.renderWidget.call(this, section_id, option_index, cfgvalue);
+								    const input = node.querySelector('input[type="checkbox"]');
 
-												return `
-																<label class="nikki-switch">
-																				<input type="checkbox"
-																											class="nikki-switch-input"
-																											data-section="${section_id}"
-																											${enabled ? 'checked' : ''}>
-																				<span class="nikki-switch-slider"></span>
-																</label>
-												`;
+								    if (input) {
+								        input.classList.add('nikki-switch-input');
+
+								        if (!input.dataset.nikkiBound) {
+								            input.dataset.nikkiBound = '1';
+
+								            input.addEventListener('change', function() {
+								                const value = input.checked ? '1' : '0';
+
+								                input.disabled = true;
+
+								                uci.set('nikki', section_id, 'enabled', value);
+								                uci.save()
+								                    .then(() => uci.apply())
+								                    .then(() => nikki.reload())
+								                    .then(() => {
+								                        window.setTimeout(() => location.reload(), 500);
+								                    })
+								                    .catch((err) => {
+								                        input.disabled = false;
+								                        ui.addNotification(null, E('p', {}, _('Failed to toggle Nikki: ') + err));
+								                    });
+								            });
+								        }
+								    }
+
+								    return node;
 								};
 
         o = s.option(form.ListValue, 'profile', _('Choose Profile'));
@@ -201,80 +220,56 @@ return view.extend({
         o.rmempty = false;
 
 								return m.render().then((node) => {
-												node.appendChild(E('style', {}, `
-																.nikki-switch {
-																				position: relative;
-																				display: inline-block;
-																				width: 50px;
-																				height: 26px;
-																				vertical-align: middle;
-																}
+									if (!document.getElementById('nikki-switch-style')) {
+										document.head.appendChild(E('style', {
+											id: 'nikki-switch-style'
+										}, `
+											input.nikki-switch-input[type="checkbox"] {
+												appearance: none;
+												-webkit-appearance: none;
+												-moz-appearance: none;
+												position: relative;
+												width: 50px;
+												height: 26px;
+												border-radius: 26px;
+												background: #ccc;
+												border: none;
+												outline: none;
+												cursor: pointer;
+												vertical-align: middle;
+												transition: .25s;
+												box-shadow: inset 0 0 0 1px rgba(0,0,0,.08);
+											}
 
-																.nikki-switch input {
-																				opacity: 0;
-																				width: 0;
-																				height: 0;
-																}
+											input.nikki-switch-input[type="checkbox"]::before {
+												content: "";
+												position: absolute;
+												width: 20px;
+												height: 20px;
+												left: 3px;
+												top: 3px;
+												border-radius: 50%;
+												background: #fff;
+												transition: .25s;
+												box-shadow: 0 1px 3px rgba(0,0,0,.25);
+											}
 
-																.nikki-switch-slider {
-																				position: absolute;
-																				cursor: pointer;
-																				inset: 0;
-																				background-color: #ccc;
-																				transition: .25s;
-																				border-radius: 26px;
-																}
+											input.nikki-switch-input[type="checkbox"]:checked {
+												background: #0b5fa5;
+											}
 
-																.nikki-switch-slider:before {
-																				position: absolute;
-																				content: "";
-																				height: 20px;
-																				width: 20px;
-																				left: 3px;
-																				top: 3px;
-																				background-color: white;
-																				transition: .25s;
-																				border-radius: 50%;
-																				box-shadow: 0 1px 3px rgba(0,0,0,.25);
-																}
+											input.nikki-switch-input[type="checkbox"]:checked::before {
+												transform: translateX(24px);
+											}
 
-																.nikki-switch-input:checked + .nikki-switch-slider {
-																				background-color: #0b5fa5;
-																}
+											input.nikki-switch-input[type="checkbox"]:disabled {
+												opacity: .6;
+												cursor: wait;
+											}
+										`));
+									}
 
-																.nikki-switch-input:checked + .nikki-switch-slider:before {
-																				transform: translateX(24px);
-																}
-
-																.nikki-switch-input:disabled + .nikki-switch-slider {
-																				opacity: .6;
-																				cursor: wait;
-																}
-												`));
-
-												node.querySelectorAll('.nikki-switch-input').forEach((input) => {
-																input.addEventListener('change', () => {
-																				const section_id = input.getAttribute('data-section');
-																				const value = input.checked ? '1' : '0';
-
-																				input.disabled = true;
-
-																				uci.set('nikki', section_id, 'enabled', value);
-
-																				uci.save()
-																								.then(() => uci.apply())
-																								.then(() => nikki.reload())
-																								.then(() => {
-																												window.setTimeout(() => location.reload(), 500);
-																								})
-																								.catch((err) => {
-																												input.disabled = false;
-																												ui.addNotification(null, E('p', {}, _('Failed to toggle Nikki: ') + err));
-																								});
-																});
-												});
-
-												return node;
+									return node;
 								});
     }
 });
