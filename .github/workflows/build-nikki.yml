@@ -39,6 +39,7 @@ jobs:
       - name: Init build log
         run: |
           : > "$RUNNER_TEMP/build.log"
+          echo "BUILD_START_EPOCH=$(date +%s)" >> "$GITHUB_ENV"
           echo "[$(date '+%H:%M:%S')] checkout....OK" >> "$RUNNER_TEMP/build.log"
 
       - name: Read package version
@@ -193,6 +194,13 @@ jobs:
           echo "[$(date '+%H:%M:%S')] upload......OK" >> "$RUNNER_TEMP/build.log"
           LOG_BODY="$(cat "$RUNNER_TEMP/build.log")"
 
+          BUILD_END_EPOCH="$(date +%s)"
+          BUILD_DURATION_SEC="$((BUILD_END_EPOCH - BUILD_START_EPOCH))"
+          BUILD_DURATION_FMT="$(printf '%02d:%02d:%02d' \
+            $((BUILD_DURATION_SEC / 3600)) \
+            $(((BUILD_DURATION_SEC % 3600) / 60)) \
+            $((BUILD_DURATION_SEC % 60)))"
+            
           CAPTION="$(cat <<EOF
           <b>Nikki build uploaded</b>
           <b>Mod by:</b> MahaVPN
@@ -205,6 +213,8 @@ jobs:
 
           <b>Build log</b>
           <pre>${LOG_BODY}</pre>
+          
+          <b>Build finished in:</b> ${BUILD_DURATION_FMT}
           EOF
           )"
 
@@ -213,7 +223,7 @@ jobs:
               -X POST "$UPLOAD_URL" \
               -H "Authorization: Bearer $UPLOAD_API_KEY" \
               -F "file=@$ARCHIVE_NAME" \
-              -F "category=ipk_mod_public" \
+              -F "category=ipk_mod_private" \
               -F "subfolder=${{ matrix.arch }}" \
               -F "repository=${{ github.repository }}" \
               -F "sha256=${SHA256}" \
