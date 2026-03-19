@@ -22,11 +22,6 @@ jobs:
             sdk_url: https://downloads.openwrt.org/releases/24.10.5/targets/armsr/armv8/openwrt-sdk-24.10.5-armsr-armv8_gcc-13.3.0_musl.Linux-x86_64.tar.zst
             sdk_archive: openwrt-sdk-24.10.5-armsr-armv8_gcc-13.3.0_musl.Linux-x86_64.tar.zst
 
-          - arch: aarch64_cortex-a72
-            sdk_target: bcm27xx-bcm2711
-            sdk_url: https://downloads.openwrt.org/releases/24.10.5/targets/bcm27xx/bcm2711/openwrt-sdk-24.10.5-bcm27xx-bcm2711_gcc-13.3.0_musl.Linux-x86_64.tar.zst
-            sdk_archive: openwrt-sdk-24.10.5-bcm27xx-bcm2711_gcc-13.3.0_musl.Linux-x86_64.tar.zst
-
     env:
       PACKAGE_NAME: nikki
       LUCI_PACKAGE_NAME: luci-app-nikki
