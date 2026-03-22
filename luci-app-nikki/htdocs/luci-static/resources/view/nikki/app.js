@@ -158,7 +158,7 @@ return view.extend({
         o = s.option(form.Flag, 'core_only', _('Core Only'));
         o.rmempty = false;
 
-        s = m.section(form.NamedSection, 'procd', 'procd', _('procd Config'));
+        s = m.section(form.NamedSection, 'procd', 'procd', _('🌏 procd Config'));
 
         s.tab('general', _('General Config'));
 
