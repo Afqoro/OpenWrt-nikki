@@ -19,8 +19,13 @@ jobs:
         include:
           - arch: aarch64_generic
             sdk_target: armsr-armv8
-            sdk_url: https://downloads.openwrt.org/releases/24.10.5/targets/armsr/armv8/openwrt-sdk-24.10.5-armsr-armv8_gcc-13.3.0_musl.Linux-x86_64.tar.zst
-            sdk_archive: openwrt-sdk-24.10.5-armsr-armv8_gcc-13.3.0_musl.Linux-x86_64.tar.zst
+            sdk_url: https://downloads.openwrt.org/releases/24.10.6/targets/armsr/armv8/openwrt-sdk-24.10.6-armsr-armv8_gcc-13.3.0_musl.Linux-x86_64.tar.zst
+            sdk_archive: openwrt-sdk-24.10.6-armsr-armv8_gcc-13.3.0_musl.Linux-x86_64.tar.zst
+
+          - arch: x86_64
+            sdk_target: x86-64
+            sdk_url: https://downloads.openwrt.org/releases/24.10.6/targets/x86/64/openwrt-sdk-24.10.6-x86-64_gcc-13.3.0_musl.Linux-x86_64.tar.zst
+            sdk_archive: openwrt-sdk-24.10.6-x86-64_gcc-13.3.0_musl.Linux-x86_64.tar.zst           
 
     env:
       PACKAGE_NAME: nikki
