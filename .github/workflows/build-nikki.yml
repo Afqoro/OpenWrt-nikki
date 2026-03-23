@@ -10,6 +10,10 @@ on:
       - 'luci-app-nikki/**'
       - '.github/workflows/build-nikki.yml'
 
+permissions:
+  contents: read
+  actions: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -19,17 +23,16 @@ jobs:
         include:
           - arch: aarch64_generic
             sdk_target: armsr-armv8
-            sdk_url: https://downloads.openwrt.org/releases/24.10.6/targets/armsr/armv8/openwrt-sdk-24.10.6-armsr-armv8_gcc-13.3.0_musl.Linux-x86_64.tar.zst
-            sdk_archive: openwrt-sdk-24.10.6-armsr-armv8_gcc-13.3.0_musl.Linux-x86_64.tar.zst
+            sdk_path: armsr/armv8
 
           - arch: x86_64
             sdk_target: x86-64
-            sdk_url: https://downloads.openwrt.org/releases/24.10.6/targets/x86/64/openwrt-sdk-24.10.6-x86-64_gcc-13.3.0_musl.Linux-x86_64.tar.zst
-            sdk_archive: openwrt-sdk-24.10.6-x86-64_gcc-13.3.0_musl.Linux-x86_64.tar.zst           
+            sdk_path: x86/64
 
     env:
       PACKAGE_NAME: nikki
       LUCI_PACKAGE_NAME: luci-app-nikki
+      OPENWRT_SERIES: 24.10
       TZ: Asia/Jakarta
 
     steps:
@@ -70,29 +73,153 @@ jobs:
             exit 1
           fi
 
-      - name: Cache SDK archive
+      - name: Resolve latest OpenWrt SDK
+        run: |
+          set -euo pipefail
+
+          RELEASES_URL="https://downloads.openwrt.org/releases/"
+          SERIES="${OPENWRT_SERIES}"
+
+          OPENWRT_VERSION="$(
+            curl -fsSL "$RELEASES_URL" \
+            | grep -oE ">${SERIES}\.[0-9]+/" \
+            | sed 's/[>/]//g' \
+            | sort -V \
+            | tail -n1
+          )"
+
+          if [ -z "${OPENWRT_VERSION:-}" ]; then
+            echo "[$(date '+%H:%M:%S')] sdk ver.....FAIL" >> "$RUNNER_TEMP/build.log"
+            echo "Failed to detect latest OpenWrt version for series ${SERIES}"
+            exit 1
+          fi
+
+          TARGET_URL="https://downloads.openwrt.org/releases/${OPENWRT_VERSION}/targets/${{ matrix.sdk_path }}/"
+
+          SDK_ARCHIVE="$(
+            curl -fsSL "$TARGET_URL" \
+            | grep -oE "openwrt-sdk-${OPENWRT_VERSION}-${{ matrix.sdk_target }}[^\"']*Linux-x86_64\.tar\.zst" \
+            | head -n1
+          )"
+
+          if [ -z "${SDK_ARCHIVE:-}" ]; then
+            echo "[$(date '+%H:%M:%S')] sdk file....FAIL" >> "$RUNNER_TEMP/build.log"
+            echo "Failed to detect SDK archive in $TARGET_URL"
+            exit 1
+          fi
+
+          SDK_URL="${TARGET_URL}${SDK_ARCHIVE}"
+          SDK_CACHE_KEY="sdk-${{ matrix.sdk_target }}-${SDK_ARCHIVE}"
+          SDK_CACHE_PREFIX="sdk-${{ matrix.sdk_target }}-"
+
+          echo "OPENWRT_VERSION=$OPENWRT_VERSION" >> "$GITHUB_ENV"
+          echo "SDK_ARCHIVE=$SDK_ARCHIVE" >> "$GITHUB_ENV"
+          echo "SDK_URL=$SDK_URL" >> "$GITHUB_ENV"
+          echo "SDK_CACHE_KEY=$SDK_CACHE_KEY" >> "$GITHUB_ENV"
+          echo "SDK_CACHE_PREFIX=$SDK_CACHE_PREFIX" >> "$GITHUB_ENV"
+
+          echo "Detected OPENWRT_VERSION=$OPENWRT_VERSION"
+          echo "Detected SDK_ARCHIVE=$SDK_ARCHIVE"
+          echo "Detected SDK_URL=$SDK_URL"
+          echo "Detected SDK_CACHE_KEY=$SDK_CACHE_KEY"
+          echo "[$(date '+%H:%M:%S')] sdk detect..OK" >> "$RUNNER_TEMP/build.log"
+
+      - name: Restore SDK cache
         uses: actions/cache@v4
         with:
-          path: ${{ matrix.sdk_archive }}
-          key: sdk-${{ matrix.sdk_target }}-${{ matrix.sdk_archive }}
+          path: ${{ env.SDK_ARCHIVE }}
+          key: ${{ env.SDK_CACHE_KEY }}
 
       - name: Download OpenWrt SDK
         run: |
-          if [ ! -f "${{ matrix.sdk_archive }}" ]; then
-            if ! wget -O "${{ matrix.sdk_archive }}" "${{ matrix.sdk_url }}"; then
+          if [ ! -f "$SDK_ARCHIVE" ]; then
+            if ! wget -O "$SDK_ARCHIVE" "$SDK_URL"; then
               echo "[$(date '+%H:%M:%S')] sdk dl......FAIL" >> "$RUNNER_TEMP/build.log"
               exit 1
             fi
           fi
 
-          ls -lh "${{ matrix.sdk_archive }}"
+          ls -lh "$SDK_ARCHIVE"
           echo "[$(date '+%H:%M:%S')] sdk dl......OK" >> "$RUNNER_TEMP/build.log"
+
+      - name: Delete stale SDK caches for same target
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          CURRENT_KEY: ${{ env.SDK_CACHE_KEY }}
+          PREFIX: ${{ env.SDK_CACHE_PREFIX }}
+        run: |
+          set -euo pipefail
+
+          python3 - <<'PY'
+          import json
+          import os
+          import subprocess
+          import sys
+          import urllib.request
+
+          repo = os.environ["REPO"]
+          token = os.environ["GH_TOKEN"]
+          current_key = os.environ["CURRENT_KEY"]
+          prefix = os.environ["PREFIX"]
+
+          owner, name = repo.split("/", 1)
+          base = f"https://api.github.com/repos/{owner}/{name}/actions/caches?per_page=100"
+
+          req = urllib.request.Request(
+              base,
+              headers={
+                  "Accept": "application/vnd.github+json",
+                  "Authorization": f"Bearer {token}",
+                  "X-GitHub-Api-Version": "2022-11-28",
+              },
+          )
+
+          try:
+              with urllib.request.urlopen(req) as resp:
+                  data = json.load(resp)
+          except Exception as e:
+              print(f"Cache list skipped: {e}")
+              sys.exit(0)
+
+          caches = data.get("actions_caches", [])
+          stale = [
+              c for c in caches
+              if c.get("key", "").startswith(prefix) and c.get("key") != current_key
+          ]
+
+          if not stale:
+              print("No stale SDK caches to delete.")
+              sys.exit(0)
+
+          for c in stale:
+              cache_id = c["id"]
+              key = c.get("key", "")
+              url = f"https://api.github.com/repos/{owner}/{name}/actions/caches/{cache_id}"
+              req = urllib.request.Request(
+                  url,
+                  method="DELETE",
+                  headers={
+                      "Accept": "application/vnd.github+json",
+                      "Authorization": f"Bearer {token}",
+                      "X-GitHub-Api-Version": "2022-11-28",
+                  },
+              )
+              try:
+                  with urllib.request.urlopen(req) as resp:
+                      status = getattr(resp, "status", None)
+                  print(f"Deleted stale cache: {key} (id={cache_id}, status={status})")
+              except Exception as e:
+                  print(f"Failed to delete cache {key} (id={cache_id}): {e}")
+          PY
+
+          echo "[$(date '+%H:%M:%S')] sdk cache...OK" >> "$RUNNER_TEMP/build.log"
 
       - name: Extract OpenWrt SDK
         run: |
           find . -maxdepth 1 -type d -name 'openwrt-sdk-*' -exec rm -rf {} +
 
-          if ! tar --use-compress-program=unzstd -xf "${{ matrix.sdk_archive }}"; then
+          if ! tar --use-compress-program=unzstd -xf "$SDK_ARCHIVE"; then
             echo "[$(date '+%H:%M:%S')] sdk xtract..FAIL" >> "$RUNNER_TEMP/build.log"
             exit 1
           fi
@@ -200,7 +327,7 @@ jobs:
             $((BUILD_DURATION_SEC / 3600)) \
             $(((BUILD_DURATION_SEC % 3600) / 60)) \
             $((BUILD_DURATION_SEC % 60)))"
-            
+
           CAPTION="$(cat <<EOF
           <b>Nikki build uploaded</b>
           <b>Mod by:</b> MahaVPN
@@ -208,12 +335,13 @@ jobs:
           <b>● File:</b> $PACKAGE_NAME
           <b>● Version:</b> $PKG_VERSION
           <b>● Arch:</b> ${{ matrix.arch }}
+          <b>● OpenWrt:</b> $OPENWRT_VERSION
 
           <b>● Archive:</b> <code>$(basename "$ARCHIVE_NAME")</code>
 
           <b>Build log</b>
           <pre>${LOG_BODY}</pre>
-          
+
           <b>Build finished in:</b> ${BUILD_DURATION_FMT}
           EOF
           )"
