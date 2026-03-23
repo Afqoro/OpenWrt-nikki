@@ -32,7 +32,7 @@ jobs:
     env:
       PACKAGE_NAME: nikki
       LUCI_PACKAGE_NAME: luci-app-nikki
-      OPENWRT_SERIES: 24.10
+      OPENWRT_SERIES: "24.10"
       TZ: Asia/Jakarta
 
     steps:
@@ -98,7 +98,8 @@ jobs:
 
           SDK_ARCHIVE="$(
             curl -fsSL "$TARGET_URL" \
-            | grep -oE "openwrt-sdk-${OPENWRT_VERSION}-${{ matrix.sdk_target }}[^\"']*Linux-x86_64\.tar\.zst" \
+            | grep -oE "openwrt-sdk-${OPENWRT_VERSION}-${{ matrix.sdk_target }}[^\"'>]*Linux-x86_64\.tar\.zst" \
+            | sort -u \
             | head -n1
           )"
 
