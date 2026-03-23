@@ -74,109 +74,26 @@ jobs:
           fi
 
       - name: Resolve latest OpenWrt SDK
-        run: |
-          set -euo pipefail
-
-          python3 - <<'PY'
-          import os
-          import re
-          import sys
-          import urllib.request
-          from datetime import datetime
-
-          series = os.environ["OPENWRT_SERIES"]
-          sdk_path = "${{ matrix.sdk_path }}"
-          sdk_target = "${{ matrix.sdk_target }}"
-          github_env = os.environ["GITHUB_ENV"]
-          runner_temp = os.environ["RUNNER_TEMP"]
-
-          def now():
-              return datetime.now().strftime("%H:%M:%S")
-
-          def log_line(text):
-              with open(f"{runner_temp}/build.log", "a", encoding="utf-8") as f:
-                  f.write(text + "\n")
-
-          def fetch(url):
-              req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-              with urllib.request.urlopen(req, timeout=60) as r:
-                  return r.read().decode("utf-8", errors="ignore")
-
-          def version_key(v):
-              return tuple(int(x) for x in v.split("."))
-
-          releases_url = "https://downloads.openwrt.org/releases/"
-
-          try:
-              releases_html = fetch(releases_url)
-          except Exception as e:
-              log_line(f"[{now()}] sdk ver.....FAIL")
-              print(f"Failed to fetch releases page: {e}")
-              sys.exit(1)
-
-          versions = sorted(
-              set(re.findall(rf"{re.escape(series)}\.\d+/", releases_html)),
-              key=lambda s: version_key(s.rstrip("/")),
-          )
-
-          if not versions:
-              log_line(f"[{now()}] sdk ver.....FAIL")
-              print(f"Failed to detect latest OpenWrt version for series {series}")
-              sys.exit(1)
-
-          openwrt_version = versions[-1].rstrip("/")
-          target_url = f"https://downloads.openwrt.org/releases/{openwrt_version}/targets/{sdk_path}/"
-
-          try:
-              target_html = fetch(target_url)
-          except Exception as e:
-              log_line(f"[{now()}] sdk file....FAIL")
-              print(f"Failed to fetch target page {target_url}: {e}")
-              sys.exit(1)
-
-          pattern = re.compile(
-              rf"openwrt-sdk-{re.escape(openwrt_version)}-{re.escape(sdk_target)}[^\"'<> ]*Linux-x86_64\.tar\.zst"
-          )
-          matches = sorted(set(pattern.findall(target_html)))
-
-          if not matches:
-              log_line(f"[{now()}] sdk file....FAIL")
-              print(f"Failed to detect SDK archive in {target_url}")
-              sys.exit(1)
-
-          sdk_archive = matches[0]
-          sdk_url = f"{target_url}{sdk_archive}"
-          sdk_cache_key = f"sdk-{sdk_target}-{sdk_archive}"
-          sdk_cache_prefix = f"sdk-{sdk_target}-"
-
-          with open(github_env, "a", encoding="utf-8") as f:
-              f.write(f"OPENWRT_VERSION={openwrt_version}\n")
-              f.write(f"SDK_ARCHIVE={sdk_archive}\n")
-              f.write(f"SDK_URL={sdk_url}\n")
-              f.write(f"SDK_CACHE_KEY={sdk_cache_key}\n")
-              f.write(f"SDK_CACHE_PREFIX={sdk_cache_prefix}\n")
-
-          print(f"Detected OPENWRT_VERSION={openwrt_version}")
-          print(f"Detected SDK_ARCHIVE={sdk_archive}")
-          print(f"Detected SDK_URL={sdk_url}")
-          print(f"Detected SDK_CACHE_KEY={sdk_cache_key}")
-
-          log_line(f"[{now()}] sdk detect..OK")
-          PY
+        id: resolve_sdk
+        uses: Afqoro/Openwrt-Sdk-ResolverKu@main
+        with:
+          sdk_path: ${{ matrix.sdk_path }}
+          sdk_target: ${{ matrix.sdk_target }}
+          openwrt_series: ${{ env.OPENWRT_SERIES }}
 
       - name: Restore SDK cache
         uses: actions/cache@v4
         with:
-          path: ${{ env.SDK_ARCHIVE }}
-          key: ${{ env.SDK_CACHE_KEY }}
+          path: ${{ steps.resolve_sdk.outputs.sdk_archive }}
+          key: ${{ steps.resolve_sdk.outputs.sdk_cache_key }}
 
       - name: Download OpenWrt SDK
         run: |
+          SDK_ARCHIVE="${{ steps.resolve_sdk.outputs.sdk_archive }}"
+          SDK_URL="${{ steps.resolve_sdk.outputs.sdk_url }}"
+
           if [ ! -f "$SDK_ARCHIVE" ]; then
-            if ! wget -O "$SDK_ARCHIVE" "$SDK_URL"; then
-              echo "[$(date '+%H:%M:%S')] sdk dl......FAIL" >> "$RUNNER_TEMP/build.log"
-              exit 1
-            fi
+            wget -O "$SDK_ARCHIVE" "$SDK_URL"
           fi
 
           ls -lh "$SDK_ARCHIVE"
@@ -186,8 +103,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
-          CURRENT_KEY: ${{ env.SDK_CACHE_KEY }}
-          PREFIX: ${{ env.SDK_CACHE_PREFIX }}
+          CURRENT_KEY: ${{ steps.resolve_sdk.outputs.sdk_cache_key }}
+          PREFIX: ${{ steps.resolve_sdk.outputs.sdk_cache_prefix }}
         run: |
           set -euo pipefail
 
@@ -257,6 +174,8 @@ jobs:
 
       - name: Extract OpenWrt SDK
         run: |
+          SDK_ARCHIVE="${{ steps.resolve_sdk.outputs.sdk_archive }}"
+
           find . -maxdepth 1 -type d -name 'openwrt-sdk-*' -exec rm -rf {} +
 
           if ! tar --use-compress-program=unzstd -xf "$SDK_ARCHIVE"; then
@@ -375,7 +294,7 @@ jobs:
           <b>● File:</b> $PACKAGE_NAME
           <b>● Version:</b> $PKG_VERSION
           <b>● Arch:</b> ${{ matrix.arch }}
-          <b>● OpenWrt:</b> $OPENWRT_VERSION
+          <b>● OpenWrt:</b> ${{ steps.resolve_sdk.outputs.openwrt_version }}
 
           <b>● Archive:</b> <code>$(basename "$ARCHIVE_NAME")</code>
 
