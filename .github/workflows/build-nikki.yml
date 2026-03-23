@@ -82,6 +82,7 @@ jobs:
           import re
           import sys
           import urllib.request
+          from datetime import datetime
 
           series = os.environ["OPENWRT_SERIES"]
           sdk_path = "${{ matrix.sdk_path }}"
@@ -89,9 +90,12 @@ jobs:
           github_env = os.environ["GITHUB_ENV"]
           runner_temp = os.environ["RUNNER_TEMP"]
 
-          def log_fail(msg):
+          def now():
+              return datetime.now().strftime("%H:%M:%S")
+
+          def log_line(text):
               with open(f"{runner_temp}/build.log", "a", encoding="utf-8") as f:
-                  f.write(msg + "\n")
+                  f.write(text + "\n")
 
           def fetch(url):
               req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
@@ -102,10 +106,11 @@ jobs:
               return tuple(int(x) for x in v.split("."))
 
           releases_url = "https://downloads.openwrt.org/releases/"
+
           try:
               releases_html = fetch(releases_url)
           except Exception as e:
-              log_fail(f"[{os.popen(\"date '+%H:%M:%S'\").read().strip()}] sdk ver.....FAIL")
+              log_line(f"[{now()}] sdk ver.....FAIL")
               print(f"Failed to fetch releases page: {e}")
               sys.exit(1)
 
@@ -115,7 +120,7 @@ jobs:
           )
 
           if not versions:
-              log_fail(f"[{os.popen(\"date '+%H:%M:%S'\").read().strip()}] sdk ver.....FAIL")
+              log_line(f"[{now()}] sdk ver.....FAIL")
               print(f"Failed to detect latest OpenWrt version for series {series}")
               sys.exit(1)
 
@@ -125,7 +130,7 @@ jobs:
           try:
               target_html = fetch(target_url)
           except Exception as e:
-              log_fail(f"[{os.popen(\"date '+%H:%M:%S'\").read().strip()}] sdk file....FAIL")
+              log_line(f"[{now()}] sdk file....FAIL")
               print(f"Failed to fetch target page {target_url}: {e}")
               sys.exit(1)
 
@@ -135,7 +140,7 @@ jobs:
           matches = sorted(set(pattern.findall(target_html)))
 
           if not matches:
-              log_fail(f"[{os.popen(\"date '+%H:%M:%S'\").read().strip()}] sdk file....FAIL")
+              log_line(f"[{now()}] sdk file....FAIL")
               print(f"Failed to detect SDK archive in {target_url}")
               sys.exit(1)
 
@@ -156,8 +161,7 @@ jobs:
           print(f"Detected SDK_URL={sdk_url}")
           print(f"Detected SDK_CACHE_KEY={sdk_cache_key}")
 
-          with open(f"{runner_temp}/build.log", "a", encoding="utf-8") as f:
-              f.write(f"[{os.popen(\"date '+%H:%M:%S'\").read().strip()}] sdk detect..OK\n")
+          log_line(f"[{now()}] sdk detect..OK")
           PY
 
       - name: Restore SDK cache
