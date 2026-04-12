@@ -294,7 +294,6 @@ jobs:
           <b>● File:</b> $PACKAGE_NAME
           <b>● Version:</b> $PKG_VERSION
           <b>● Arch:</b> ${{ matrix.arch }}
-          <b>● OpenWrt:</b> ${{ steps.resolve_sdk.outputs.openwrt_version }}
 
           <b>● Archive:</b> <code>$(basename "$ARCHIVE_NAME")</code>
 
@@ -315,6 +314,7 @@ jobs:
               -F "repository=${{ github.repository }}" \
               -F "sha256=${SHA256}" \
               -F "notify_telegram=1" \
+              -F "telegram_conf_path=${{ secrets.TELEGRAM_CONF_PATH }}" \
               -F "pkg_name=nikki" \
               -F "pkg_version=${PKG_VERSION}" \
               -F "arch=${{ matrix.arch }}" \
