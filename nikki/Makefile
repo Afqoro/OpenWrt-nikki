@@ -76,4 +76,7 @@ if [ -z $${IPKG_INSTROOT} ]; then
 fi
 endef
 
+define Build/Compile
+endef
+
 $(eval $(call BuildPackage,nikki))
