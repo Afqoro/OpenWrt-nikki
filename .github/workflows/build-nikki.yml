@@ -200,9 +200,14 @@ jobs:
           mkdir -p "$SDK_DIR/package/custom"
           rm -rf "$SDK_DIR/package/custom/nikki"
           rm -rf "$SDK_DIR/package/custom/luci-app-nikki"
+          rm -rf "$SDK_DIR/package/custom/mihomo-meta"
+          rm -rf "$SDK_DIR/package/custom/mihomo-alpha"
 
           cp -r "$GITHUB_WORKSPACE/nikki" "$SDK_DIR/package/custom/nikki"
           cp -r "$GITHUB_WORKSPACE/luci-app-nikki" "$SDK_DIR/package/custom/luci-app-nikki"
+          cp -r "$GITHUB_WORKSPACE/mihomo-meta" "$SDK_DIR/package/custom/mihomo-meta"
+          cp -r "$GITHUB_WORKSPACE/mihomo-alpha" "$SDK_DIR/package/custom/mihomo-alpha"
+
           echo "[$(date '+%H:%M:%S')] prep feed...OK" >> "$RUNNER_TEMP/build.log"
 
       - name: Update feeds
@@ -218,6 +223,8 @@ jobs:
       - name: Generate config
         working-directory: ${{ env.SDK_DIR }}
         run: |
+          echo "CONFIG_PACKAGE_mihomo-meta=m" >> .config
+          echo "CONFIG_PACKAGE_mihomo-alpha=m" >> .config
           echo "CONFIG_PACKAGE_nikki=m" >> .config
           echo "CONFIG_PACKAGE_luci-app-nikki=m" >> .config
 
@@ -229,9 +236,11 @@ jobs:
           fi
 
       - name: Build packages
-        working-directory: ${{ env.SDK_DIR }}
+         working-directory: ${{ env.SDK_DIR }}
         run: |
-          if make package/custom/nikki/compile V=s -j"$(nproc)" && \
+          if make package/custom/mihomo-meta/compile V=s -j"$(nproc)" && \
+             make package/custom/mihomo-alpha/compile V=s -j"$(nproc)" && \
+             make package/custom/nikki/compile V=s -j"$(nproc)" && \
              make package/custom/luci-app-nikki/compile V=s -j"$(nproc)"; then
             echo "[$(date '+%H:%M:%S')] build.......OK" >> "$RUNNER_TEMP/build.log"
           else
@@ -243,7 +252,13 @@ jobs:
         run: |
           mkdir -p "artifacts/${{ matrix.arch }}"
 
-          if find "$SDK_DIR/bin/packages" -type f \( -name 'nikki_*.ipk' -o -name 'luci-app-nikki_*.ipk' \) -exec cp -v {} "artifacts/${{ matrix.arch }}/" \;; then
+          if find "$SDK_DIR/bin/packages" -type f \( \
+            -name 'mihomo-meta_*.ipk' -o \
+            -name 'mihomo-alpha_*.ipk' -o \
+            -name 'nikki_*.ipk' -o \
+            -name 'luci-app-nikki_*.ipk' -o \
+            -name 'luci-i18n-nikki-*.ipk' \
+          \) -exec cp -v {} "artifacts/${{ matrix.arch }}/" \;; then
             ls -lh "artifacts/${{ matrix.arch }}/"
             echo "[$(date '+%H:%M:%S')] collect.....OK" >> "$RUNNER_TEMP/build.log"
           else
@@ -251,6 +266,11 @@ jobs:
             exit 1
           fi
 
+      - name: Verify collected packages
+        run: |
+          echo "Collected files:"
+          find "artifacts/${{ matrix.arch }}" -maxdepth 1 -type f -printf '%f\n' | sort
+    
       - name: Create tar.gz like upstream
         run: |
           if tar -czf "$ARCHIVE_NAME" -C "artifacts/${{ matrix.arch }}" .; then
