@@ -236,7 +236,7 @@ jobs:
           fi
 
       - name: Build packages
-         working-directory: ${{ env.SDK_DIR }}
+        working-directory: ${{ env.SDK_DIR }}
         run: |
           if make package/custom/mihomo-meta/compile V=s -j"$(nproc)" && \
              make package/custom/mihomo-alpha/compile V=s -j"$(nproc)" && \
