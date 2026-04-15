@@ -63,6 +63,11 @@ jobs:
           PACKAGES: nikki luci-app-nikki
           NO_REFRESH_CHECK: true
 
+      - name: Debug built packages
+        run: |
+          echo "== Packages under bin =="
+          find bin -type f -name '*.ipk' | sort
+    
       - name: Mark build success
         run: |
           echo "[$(date '+%H:%M:%S')] build.......OK" >> "$RUNNER_TEMP/build.log"
@@ -74,12 +79,15 @@ jobs:
           if find bin -type f \( \
             -name 'nikki_*.ipk' -o \
             -name 'luci-app-nikki_*.ipk' -o \
-            -name 'luci-i18n-nikki-*.ipk' \
+            -name 'luci-i18n-nikki-*.ipk' -o \
+            -name 'mihomo-meta_*.ipk' -o \
+            -name 'mihomo-alpha_*.ipk' -o \
+            -name 'mihomo_*.ipk' \
           \) -exec cp -v {} "artifacts/${{ matrix.arch }}/" \;; then
             ls -lh "artifacts/${{ matrix.arch }}/"
             echo "[$(date '+%H:%M:%S')] collect.....OK" >> "$RUNNER_TEMP/build.log"
           else
-            echo "[$(date '+%H:%M:%S')] collect.....FAIL" >> "$RUNNER_TEMP/build.log"
+             echo "[$(date '+%H:%M:%S')] collect.....FAIL" >> "$RUNNER_TEMP/build.log"
             exit 1
           fi
 
