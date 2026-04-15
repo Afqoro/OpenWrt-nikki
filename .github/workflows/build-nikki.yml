@@ -21,18 +21,12 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - arch: aarch64_generic
-            sdk_target: armsr-armv8
-            sdk_path: armsr/armv8
-
-          - arch: x86_64
-            sdk_target: x86-64
-            sdk_path: x86/64
+          - arch: aarch64_generic-openwrt-24.10
+          - arch: x86_64-openwrt-24.10
 
     env:
       PACKAGE_NAME: nikki
       LUCI_PACKAGE_NAME: luci-app-nikki
-      OPENWRT_SERIES: "24.10"
       TZ: Asia/Jakarta
 
     steps:
@@ -61,200 +55,23 @@ jobs:
           echo "Using ARCHIVE_NAME=nikki-${{ matrix.arch }}-$PKG_VERSION.tar.gz"
           echo "[$(date '+%H:%M:%S')] read ver....OK" >> "$RUNNER_TEMP/build.log"
 
-      - name: Install build dependencies
-        run: |
-          if sudo apt-get update && sudo apt-get install -y \
-            build-essential clang flex bison g++ gawk gcc-multilib g++-multilib \
-            gettext git libncurses5-dev libssl-dev rsync unzip zlib1g-dev \
-            file wget subversion swig time tar zstd python3 python3-pip python3-setuptools curl; then
-            echo "[$(date '+%H:%M:%S')] deps........OK" >> "$RUNNER_TEMP/build.log"
-          else
-            echo "[$(date '+%H:%M:%S')] deps........FAIL" >> "$RUNNER_TEMP/build.log"
-            exit 1
-          fi
-
-      - name: Resolve latest OpenWrt SDK
-        id: resolve_sdk
-        uses: Afqoro/Openwrt-Sdk-ResolverKu@main
-        with:
-          sdk_path: ${{ matrix.sdk_path }}
-          sdk_target: ${{ matrix.sdk_target }}
-          openwrt_series: ${{ env.OPENWRT_SERIES }}
-
-      - name: Restore SDK cache
-        uses: actions/cache@v4
-        with:
-          path: ${{ steps.resolve_sdk.outputs.sdk_archive }}
-          key: ${{ steps.resolve_sdk.outputs.sdk_cache_key }}
-
-      - name: Download OpenWrt SDK
-        run: |
-          SDK_ARCHIVE="${{ steps.resolve_sdk.outputs.sdk_archive }}"
-          SDK_URL="${{ steps.resolve_sdk.outputs.sdk_url }}"
-
-          if [ ! -f "$SDK_ARCHIVE" ]; then
-            wget -O "$SDK_ARCHIVE" "$SDK_URL"
-          fi
-
-          ls -lh "$SDK_ARCHIVE"
-          echo "[$(date '+%H:%M:%S')] sdk dl......OK" >> "$RUNNER_TEMP/build.log"
-
-      - name: Delete stale SDK caches for same target
+      - name: Build packages with OpenWrt SDK
+        uses: openwrt/gh-action-sdk@main
         env:
-          GH_TOKEN: ${{ github.token }}
-          REPO: ${{ github.repository }}
-          CURRENT_KEY: ${{ steps.resolve_sdk.outputs.sdk_cache_key }}
-          PREFIX: ${{ steps.resolve_sdk.outputs.sdk_cache_prefix }}
+          ARCH: ${{ matrix.arch }}
+          FEEDNAME: nikki
+          PACKAGES: nikki luci-app-nikki
+          NO_REFRESH_CHECK: true
+
+      - name: Mark build success
         run: |
-          set -euo pipefail
-
-          python3 - <<'PY'
-          import json
-          import os
-          import subprocess
-          import sys
-          import urllib.request
-
-          repo = os.environ["REPO"]
-          token = os.environ["GH_TOKEN"]
-          current_key = os.environ["CURRENT_KEY"]
-          prefix = os.environ["PREFIX"]
-
-          owner, name = repo.split("/", 1)
-          base = f"https://api.github.com/repos/{owner}/{name}/actions/caches?per_page=100"
-
-          req = urllib.request.Request(
-              base,
-              headers={
-                  "Accept": "application/vnd.github+json",
-                  "Authorization": f"Bearer {token}",
-                  "X-GitHub-Api-Version": "2022-11-28",
-              },
-          )
-
-          try:
-              with urllib.request.urlopen(req) as resp:
-                  data = json.load(resp)
-          except Exception as e:
-              print(f"Cache list skipped: {e}")
-              sys.exit(0)
-
-          caches = data.get("actions_caches", [])
-          stale = [
-              c for c in caches
-              if c.get("key", "").startswith(prefix) and c.get("key") != current_key
-          ]
-
-          if not stale:
-              print("No stale SDK caches to delete.")
-              sys.exit(0)
-
-          for c in stale:
-              cache_id = c["id"]
-              key = c.get("key", "")
-              url = f"https://api.github.com/repos/{owner}/{name}/actions/caches/{cache_id}"
-              req = urllib.request.Request(
-                  url,
-                  method="DELETE",
-                  headers={
-                      "Accept": "application/vnd.github+json",
-                      "Authorization": f"Bearer {token}",
-                      "X-GitHub-Api-Version": "2022-11-28",
-                  },
-              )
-              try:
-                  with urllib.request.urlopen(req) as resp:
-                      status = getattr(resp, "status", None)
-                  print(f"Deleted stale cache: {key} (id={cache_id}, status={status})")
-              except Exception as e:
-                  print(f"Failed to delete cache {key} (id={cache_id}): {e}")
-          PY
-
-          echo "[$(date '+%H:%M:%S')] sdk cache...OK" >> "$RUNNER_TEMP/build.log"
-
-      - name: Extract OpenWrt SDK
-        run: |
-          SDK_ARCHIVE="${{ steps.resolve_sdk.outputs.sdk_archive }}"
-
-          find . -maxdepth 1 -type d -name 'openwrt-sdk-*' -exec rm -rf {} +
-
-          if ! tar --use-compress-program=unzstd -xf "$SDK_ARCHIVE"; then
-            echo "[$(date '+%H:%M:%S')] sdk xtract..FAIL" >> "$RUNNER_TEMP/build.log"
-            exit 1
-          fi
-
-          SDK_DIR=$(find . -maxdepth 1 -type d -name "openwrt-sdk-*" | head -n 1)
-
-          if [ -z "$SDK_DIR" ]; then
-            echo "[$(date '+%H:%M:%S')] sdk xtract..FAIL" >> "$RUNNER_TEMP/build.log"
-            echo "SDK_DIR not found after extraction"
-            exit 1
-          fi
-
-          echo "SDK_DIR=$SDK_DIR" >> "$GITHUB_ENV"
-          echo "Using SDK_DIR=$SDK_DIR"
-          echo "[$(date '+%H:%M:%S')] sdk xtract..OK" >> "$RUNNER_TEMP/build.log"
-
-      - name: Prepare custom feed packages
-        run: |
-          mkdir -p "$SDK_DIR/package/custom"
-          rm -rf "$SDK_DIR/package/custom/nikki"
-          rm -rf "$SDK_DIR/package/custom/luci-app-nikki"
-          rm -rf "$SDK_DIR/package/custom/mihomo-meta"
-          rm -rf "$SDK_DIR/package/custom/mihomo-alpha"
-
-          cp -r "$GITHUB_WORKSPACE/nikki" "$SDK_DIR/package/custom/nikki"
-          cp -r "$GITHUB_WORKSPACE/luci-app-nikki" "$SDK_DIR/package/custom/luci-app-nikki"
-          cp -r "$GITHUB_WORKSPACE/mihomo-meta" "$SDK_DIR/package/custom/mihomo-meta"
-          cp -r "$GITHUB_WORKSPACE/mihomo-alpha" "$SDK_DIR/package/custom/mihomo-alpha"
-
-          echo "[$(date '+%H:%M:%S')] prep feed...OK" >> "$RUNNER_TEMP/build.log"
-
-      - name: Update feeds
-        working-directory: ${{ env.SDK_DIR }}
-        run: |
-          if ./scripts/feeds update -a && ./scripts/feeds install luci; then
-            echo "[$(date '+%H:%M:%S')] feeds.......OK" >> "$RUNNER_TEMP/build.log"
-          else
-            echo "[$(date '+%H:%M:%S')] feeds.......FAIL" >> "$RUNNER_TEMP/build.log"
-            exit 1
-          fi
-
-      - name: Generate config
-        working-directory: ${{ env.SDK_DIR }}
-        run: |
-          echo "CONFIG_PACKAGE_mihomo-meta=m" >> .config
-          echo "CONFIG_PACKAGE_mihomo-alpha=m" >> .config
-          echo "CONFIG_PACKAGE_nikki=m" >> .config
-          echo "CONFIG_PACKAGE_luci-app-nikki=m" >> .config
-
-          if make defconfig; then
-            echo "[$(date '+%H:%M:%S')] defconfig...OK" >> "$RUNNER_TEMP/build.log"
-          else
-            echo "[$(date '+%H:%M:%S')] defconfig...FAIL" >> "$RUNNER_TEMP/build.log"
-            exit 1
-          fi
-
-      - name: Build packages
-        working-directory: ${{ env.SDK_DIR }}
-        run: |
-          if make package/custom/mihomo-meta/compile V=s -j"$(nproc)" && \
-             make package/custom/mihomo-alpha/compile V=s -j"$(nproc)" && \
-             make package/custom/nikki/compile V=s -j"$(nproc)" && \
-             make package/custom/luci-app-nikki/compile V=s -j"$(nproc)"; then
-            echo "[$(date '+%H:%M:%S')] build.......OK" >> "$RUNNER_TEMP/build.log"
-          else
-            echo "[$(date '+%H:%M:%S')] build.......FAIL" >> "$RUNNER_TEMP/build.log"
-            exit 1
-          fi
+          echo "[$(date '+%H:%M:%S')] build.......OK" >> "$RUNNER_TEMP/build.log"
 
       - name: Collect IPK files
         run: |
           mkdir -p "artifacts/${{ matrix.arch }}"
 
-          if find "$SDK_DIR/bin/packages" -type f \( \
-            -name 'mihomo-meta_*.ipk' -o \
-            -name 'mihomo-alpha_*.ipk' -o \
+          if find bin -type f \( \
             -name 'nikki_*.ipk' -o \
             -name 'luci-app-nikki_*.ipk' -o \
             -name 'luci-i18n-nikki-*.ipk' \
@@ -270,7 +87,7 @@ jobs:
         run: |
           echo "Collected files:"
           find "artifacts/${{ matrix.arch }}" -maxdepth 1 -type f -printf '%f\n' | sort
-    
+
       - name: Create tar.gz like upstream
         run: |
           if tar -czf "$ARCHIVE_NAME" -C "artifacts/${{ matrix.arch }}" .; then
