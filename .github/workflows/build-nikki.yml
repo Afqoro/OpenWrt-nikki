@@ -79,7 +79,6 @@ jobs:
           if find bin -type f \( \
             -name 'nikki_*.ipk' -o \
             -name 'luci-app-nikki_*.ipk' -o \
-            -name 'luci-i18n-nikki-*.ipk' -o \
             -name 'mihomo-meta_*.ipk' -o \
             -name 'mihomo-alpha_*.ipk' -o \
             -name 'mihomo_*.ipk' \
